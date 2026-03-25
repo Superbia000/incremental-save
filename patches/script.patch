@@ -8,7 +8,7 @@
  } from './scripts/group-chats.js';
  
  import {
-@@ -387,6 +388,46 @@
+@@ -387,6 +388,48 @@
  export let swipeState = SWIPE_STATE.NONE;
  let chatSaveTimeout;
  let importFlashTimeout;
@@ -26,7 +26,9 @@
 + */
 +function computeChatHash(chatArray, upToIndex) {
 +    let hash = '';
-+    for (let i = 0; i < upToIndex && i < chatArray.length; i++) {
++    // Start from index 1: skip the first message (greeting) because Generate()
++    // calls substituteParams(chat[0].mes) which may change its length every time
++    for (let i = 1; i < upToIndex && i < chatArray.length; i++) {
 +        const m = chatArray[i];
 +        hash += `${(m.mes || '').length}:${m.swipe_id ?? 0},`;
 +    }
@@ -55,7 +57,7 @@
  export let isChatSaving = false;
  let firstRun = false;
  export let settingsReady = false;
-@@ -1553,7 +1594,12 @@
+@@ -1553,7 +1596,12 @@
      await saveItemizedPrompts(getCurrentChatId());
      itemizedPrompts.length = 0;
  
@@ -69,7 +71,7 @@
  }
  
  export async function deleteLastMessage() {
-@@ -7207,6 +7253,42 @@
+@@ -7207,6 +7255,42 @@
      };
  
      try {
@@ -112,7 +114,7 @@
          const result = await fetch('/api/chats/save', {
              method: 'POST',
              cache: 'no-cache',
-@@ -7221,6 +7303,10 @@
+@@ -7221,6 +7305,10 @@
          });
  
          if (result.ok) {
