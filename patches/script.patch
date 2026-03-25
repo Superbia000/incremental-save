@@ -1,0 +1,125 @@
+--- a/public/script.js
++++ b/public/script.js
+@@ -72,6 +72,7 @@
+     getGroupBlock,
+     getGroupCharacterCardsLazy,
+     getGroupDepthPrompts,
++    resetGroupIncrementalSaveState,
+ } from './scripts/group-chats.js';
+ 
+ import {
+@@ -387,6 +388,46 @@
+ export let swipeState = SWIPE_STATE.NONE;
+ let chatSaveTimeout;
+ let importFlashTimeout;
++
++// Incremental save tracking
++let lastSavedChatName = null;
++let lastSavedChatLength = 0;
++let lastSavedChatHash = null;
++
++/**
++ * Computes a lightweight hash of chat messages for change detection.
++ * @param {object[]} chatArray The chat array
++ * @param {number} upToIndex Hash messages up to this index
++ * @returns {string} Hash string
++ */
++function computeChatHash(chatArray, upToIndex) {
++    let hash = '';
++    for (let i = 0; i < upToIndex && i < chatArray.length; i++) {
++        const m = chatArray[i];
++        hash += `${(m.mes || '').length}:${m.swipe_id ?? 0},`;
++    }
++    return hash;
++}
++
++/**
++ * Checks if old messages have been modified since last save.
++ * @param {object[]} chatArray Current chat array
++ * @param {number} savedLength Number of messages at last save
++ * @returns {boolean} True if old messages changed
++ */
++function hasOldMessagesChanged(chatArray, savedLength) {
++    return computeChatHash(chatArray, savedLength) !== lastSavedChatHash;
++}
++
++/**
++ * Resets incremental save tracking state.
++ * Call this when switching chats, characters, or reloading.
++ */
++export function resetIncrementalSaveState() {
++    lastSavedChatName = null;
++    lastSavedChatLength = 0;
++    lastSavedChatHash = null;
++}
+ export let isChatSaving = false;
+ let firstRun = false;
+ export let settingsReady = false;
+@@ -1553,7 +1594,12 @@
+     await saveItemizedPrompts(getCurrentChatId());
+     itemizedPrompts.length = 0;
+ 
+-    if (clearData) chat.length = 0;
++    if (clearData) {
++        chat.length = 0;
++        // Reset incremental save tracking when chat data is cleared
++        resetIncrementalSaveState();
++        resetGroupIncrementalSaveState();
++    }
+ }
+ 
+ export async function deleteLastMessage() {
+@@ -7207,6 +7253,42 @@
+     };
+ 
+     try {
++        // ===== Incremental save check =====
++        const canAppend = (
++            !force &&
++            mesId === undefined &&
++            fileName === lastSavedChatName &&
++            trimmedChat.length > lastSavedChatLength &&
++            lastSavedChatLength > 0 &&
++            !hasOldMessagesChanged(trimmedChat, lastSavedChatLength)
++        );
++
++        if (canAppend) {
++            const newMessages = trimmedChat.slice(lastSavedChatLength);
++            console.debug(`Incremental save: appending ${newMessages.length} new message(s) to "${fileName}"`);
++            const appendResult = await fetch('/api/chats/save-append', {
++                method: 'POST',
++                cache: 'no-cache',
++                headers: getRequestHeaders(),
++                body: JSON.stringify({
++                    file_name: fileName,
++                    avatar_url: characters[this_chid].avatar,
++                    header: chatHeader,
++                    newMessages: newMessages,
++                    expectedLines: lastSavedChatLength + 1, // +1 for header line
++                }),
++            });
++
++            if (appendResult.ok) {
++                lastSavedChatLength = trimmedChat.length;
++                lastSavedChatHash = computeChatHash(trimmedChat, trimmedChat.length);
++                return;
++            }
++
++            console.warn('Incremental save failed, falling back to full save');
++        }
++
++        // ===== Full save (original logic) =====
+         const result = await fetch('/api/chats/save', {
+             method: 'POST',
+             cache: 'no-cache',
+@@ -7221,6 +7303,10 @@
+         });
+ 
+         if (result.ok) {
++            // Update incremental save tracking after successful full save
++            lastSavedChatName = fileName;
++            lastSavedChatLength = trimmedChat.length;
++            lastSavedChatHash = computeChatHash(trimmedChat, trimmedChat.length);
+             return;
+         }
+ 

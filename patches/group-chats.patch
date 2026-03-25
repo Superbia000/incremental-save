@@ -1,0 +1,104 @@
+--- a/public/scripts/group-chats.js
++++ b/public/scripts/group-chats.js
+@@ -79,6 +79,7 @@
+     unshallowCharacter,
+     chatElement,
+     ensureMessageMediaIsArray,
++    resetIncrementalSaveState,
+ } from '../script.js';
+ import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
+ import { FILTER_TYPES, FilterHelper } from './filters.js';
+@@ -614,8 +615,36 @@
+     is_group_generating = false;
+ }
+ 
++// Incremental save tracking for group chats
++let lastSavedGroupChatId = null;
++let lastSavedGroupChatLength = 0;
++let lastSavedGroupChatHash = null;
++
++function computeGroupChatHash(chatArray, upToIndex) {
++    let hash = '';
++    for (let i = 0; i < upToIndex && i < chatArray.length; i++) {
++        const m = chatArray[i];
++        hash += `${(m.mes || '').length}:${m.swipe_id ?? 0},`;
++    }
++    return hash;
++}
++
++function hasOldGroupMessagesChanged(chatArray, savedLength) {
++    return computeGroupChatHash(chatArray, savedLength) !== lastSavedGroupChatHash;
++}
++
++/**
++ * Resets the incremental save tracking state for group chats.
++ */
++export function resetGroupIncrementalSaveState() {
++    lastSavedGroupChatId = null;
++    lastSavedGroupChatLength = 0;
++    lastSavedGroupChatHash = null;
++}
++
+ /**
+  * Saves a group chat to the server.
++ * Uses incremental save (append-only) when possible, falls back to full save.
+  * @param {string} groupId Group ID
+  * @param {boolean} shouldSaveGroup Whether to save the group after saving the chat
+  * @param {boolean} force Force the saving on integrity error
+@@ -635,12 +664,56 @@
+         user_name: 'unused',
+         character_name: 'unused',
+     };
++
++    // ===== Incremental save check =====
++    const canAppend = (
++        !force &&
++        chatId === lastSavedGroupChatId &&
++        chat.length > lastSavedGroupChatLength &&
++        lastSavedGroupChatLength > 0 &&
++        !hasOldGroupMessagesChanged(chat, lastSavedGroupChatLength)
++    );
++
++    if (canAppend) {
++        const newMessages = chat.slice(lastSavedGroupChatLength);
++        console.debug(`Incremental group save: appending ${newMessages.length} new message(s) to group "${chatId}"`);
++        const appendResponse = await fetch('/api/chats/group/save-append', {
++            method: 'POST',
++            headers: getRequestHeaders(),
++            body: JSON.stringify({
++                id: chatId,
++                header: chatHeader,
++                newMessages: newMessages,
++                expectedLines: lastSavedGroupChatLength + 1,
++            }),
++        });
++
++        if (appendResponse.ok) {
++            lastSavedGroupChatLength = chat.length;
++            lastSavedGroupChatHash = computeGroupChatHash(chat, chat.length);
++            if (shouldSaveGroup) {
++                await editGroup(groupId, false, false);
++            }
++            return;
++        }
++
++        console.warn('Incremental group save failed, falling back to full save');
++    }
++
++    // ===== Full save (original logic) =====
+     const response = await fetch('/api/chats/group/save', {
+         method: 'POST',
+         headers: getRequestHeaders(),
+         body: JSON.stringify({ id: chatId, chat: [chatHeader, ...chat], force: force }),
+     });
+ 
++    if (response.ok) {
++        // Update incremental save tracking after successful full save
++        lastSavedGroupChatId = chatId;
++        lastSavedGroupChatLength = chat.length;
++        lastSavedGroupChatHash = computeGroupChatHash(chat, chat.length);
++    }
++
+     if (!response.ok) {
+         const errorData = await response.json();
+         const isIntegrityError = errorData?.error === 'integrity' && !force;
