@@ -79,25 +79,20 @@ async function fetchAndCache(url, cacheDir, hash) {
         throw new Error(`File too large: ${buffer.length} bytes (max ${MAX_FILE_SIZE})`);
     }
 
-    // Ensure cache directory exists
     fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Determine file extension from content type
     const ext = contentType.includes('png') ? '.png'
         : contentType.includes('jpeg') || contentType.includes('jpg') ? '.jpg'
-        : contentType.includes('gif') ? '.gif'
-        : contentType.includes('webp') ? '.webp'
-        : contentType.includes('svg') ? '.svg'
-        : contentType.includes('avif') ? '.avif'
-        : contentType.includes('bmp') ? '.bmp'
-        : '';
+            : contentType.includes('gif') ? '.gif'
+                : contentType.includes('webp') ? '.webp'
+                    : contentType.includes('svg') ? '.svg'
+                        : contentType.includes('avif') ? '.avif'
+                            : contentType.includes('bmp') ? '.bmp'
+                                : '';
 
     const filePath = path.join(cacheDir, hash + ext);
-
-    // Write image data
     fs.writeFileSync(filePath, buffer);
 
-    // Write metadata
     const metaPath = path.join(cacheDir, hash + '.meta.json');
     fs.writeFileSync(metaPath, JSON.stringify({
         url: url,
@@ -125,7 +120,6 @@ function findCachedFile(cacheDir, hash) {
         const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
         const contentType = meta.contentType || 'application/octet-stream';
 
-        // Find the actual image file (hash + extension)
         const files = fs.readdirSync(cacheDir);
         const imageFile = files.find(f => f.startsWith(hash) && !f.endsWith('.meta.json'));
         if (!imageFile) {
@@ -156,7 +150,6 @@ router.get('/', async function (request, response) {
     const hash = hashUrl(url);
 
     try {
-        // Check disk cache first
         const cached = findCachedFile(cacheDir, hash);
         if (cached) {
             response.setHeader('Content-Type', cached.contentType);
@@ -165,7 +158,6 @@ router.get('/', async function (request, response) {
             return response.sendFile(cached.filePath);
         }
 
-        // Deduplicate concurrent requests for the same URL
         let fetchPromise = inFlightRequests.get(url);
         if (!fetchPromise) {
             fetchPromise = fetchAndCache(url, cacheDir, hash);
