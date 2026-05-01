@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# SillyTavern Incremental Save + Image Cache - Installer
+# SillyTavern Incremental Save + Image Cache - Installer (v1.17)
 #
 # Applies patches to a running SillyTavern Docker container
 # or a local SillyTavern installation.
@@ -14,8 +14,6 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATCHES_DIR="$SCRIPT_DIR/patches"
-NEW_FILES_DIR="$SCRIPT_DIR/new-files"
 
 info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
@@ -61,26 +59,25 @@ if [ "$MODE" = "docker" ]; then
     info "Applying patches inside container..."
 
     # Copy patches and new files into container
-    docker cp "$PATCHES_DIR" "$CONTAINER:/tmp/_inc_save_patches"
-    docker cp "$NEW_FILES_DIR" "$CONTAINER:/tmp/_inc_save_new_files"
+    docker cp "$SCRIPT_DIR" "$CONTAINER:/tmp/_inc_save_patches"
 
     # Apply patches (incremental save)
-    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/chats.server.patch"
-    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/script.patch"
-    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/group-chats.patch"
+    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/chats.server.1.17.patch"
+    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/script.1.17.patch"
+    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/group-chats.1.17.patch"
 
     # Apply patches (image proxy cache)
-    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/server-startup.patch"
-    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/chats.patch"
+    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/server-startup.1.17.patch"
+    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/chats.1.17.patch"
 
     # Apply patches (token counting optimization)
-    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/tokenizers.patch"
+    docker exec "$CONTAINER" sh -c "cd /home/node/app && patch -p1 < /tmp/_inc_save_patches/tokenizers.1.17.patch"
 
     # Copy new files (image proxy endpoint)
-    docker exec "$CONTAINER" cp /tmp/_inc_save_new_files/image-proxy.js /home/node/app/src/endpoints/image-proxy.js
+    docker exec "$CONTAINER" cp /tmp/_inc_save_patches/image-proxy.js /home/node/app/src/endpoints/image-proxy.js
 
     # Cleanup
-    docker exec "$CONTAINER" rm -rf /tmp/_inc_save_patches /tmp/_inc_save_new_files
+    docker exec "$CONTAINER" rm -rf /tmp/_inc_save_patches
 
     info "Restarting container..."
     docker restart "$CONTAINER"
@@ -113,15 +110,15 @@ if [ "$MODE" = "local" ]; then
 
     info "Applying patches..."
     cd "$ST_DIR"
-    patch -p1 < "$PATCHES_DIR/chats.server.patch"
-    patch -p1 < "$PATCHES_DIR/script.patch"
-    patch -p1 < "$PATCHES_DIR/group-chats.patch"
-    patch -p1 < "$PATCHES_DIR/server-startup.patch"
-    patch -p1 < "$PATCHES_DIR/chats.patch"
-    patch -p1 < "$PATCHES_DIR/tokenizers.patch"
+    patch -p1 < "$SCRIPT_DIR/chats.server.1.17.patch"
+    patch -p1 < "$SCRIPT_DIR/script.1.17.patch"
+    patch -p1 < "$SCRIPT_DIR/group-chats.1.17.patch"
+    patch -p1 < "$SCRIPT_DIR/server-startup.1.17.patch"
+    patch -p1 < "$SCRIPT_DIR/chats.1.17.patch"
+    patch -p1 < "$SCRIPT_DIR/tokenizers.1.17.patch"
 
     info "Copying new files..."
-    cp "$NEW_FILES_DIR/image-proxy.js" "$ST_DIR/src/endpoints/image-proxy.js"
+    cp "$SCRIPT_DIR/image-proxy.js" "$ST_DIR/src/endpoints/image-proxy.js"
 
     info "Done! Restart SillyTavern to activate incremental save + image cache."
 fi
