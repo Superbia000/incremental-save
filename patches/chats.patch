@@ -1,11 +1,12 @@
+diff --git a/public/scripts/chats.js b/public/scripts/chats.js
+index fff15a63f..af2b884b2 100644
 --- a/public/scripts/chats.js
 +++ b/public/scripts/chats.js
-@@ -1908,6 +1908,14 @@
+@@ -1905,6 +1905,13 @@ export function addDOMPurifyHooks() {
              node.setAttribute('target', '_blank');
              node.setAttribute('rel', 'noopener');
          }
 +
-+        // Rewrite external image URLs to use the image proxy for caching
 +        if (node.tagName === 'IMG') {
 +            const src = node.getAttribute('src');
 +            if (src && (src.indexOf('://') > 0 || src.indexOf('//') === 0) && !src.startsWith(window.location.origin) && !src.startsWith('/api/image-proxy')) {

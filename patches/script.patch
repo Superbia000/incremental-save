@@ -1,6 +1,8 @@
+diff --git a/public/script.js b/public/script.js
+index dad10064f..d1737aef7 100644
 --- a/public/script.js
 +++ b/public/script.js
-@@ -72,6 +72,7 @@
+@@ -72,6 +72,7 @@ import {
      getGroupBlock,
      getGroupCharacterCardsLazy,
      getGroupDepthPrompts,
@@ -8,12 +10,11 @@
  } from './scripts/group-chats.js';
  
  import {
-@@ -387,6 +388,66 @@
+@@ -415,6 +416,47 @@ export let chat = [];
  export let swipeState = SWIPE_STATE.NONE;
  let chatSaveTimeout;
  let importFlashTimeout;
 +
-+// Image proxy: intercept Image.src setter to route external images through the caching proxy
 +(function installImageProxyInterceptor() {
 +    const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
 +    if (!descriptor || !descriptor.set) return;
@@ -31,21 +32,12 @@
 +    console.debug('[ImageProxy] Image.src interceptor installed');
 +})();
 +
-+// Incremental save tracking
 +let lastSavedChatName = null;
 +let lastSavedChatLength = 0;
 +let lastSavedChatHash = null;
 +
-+/**
-+ * Computes a lightweight hash of chat messages for change detection.
-+ * @param {object[]} chatArray The chat array
-+ * @param {number} upToIndex Hash messages up to this index
-+ * @returns {string} Hash string
-+ */
 +function computeChatHash(chatArray, upToIndex) {
 +    let hash = '';
-+    // Start from index 1: skip the first message (greeting) because Generate()
-+    // calls substituteParams(chat[0].mes) which may change its length every time
 +    for (let i = 1; i < upToIndex && i < chatArray.length; i++) {
 +        const m = chatArray[i];
 +        hash += `${(m.mes || '').length}:${m.swipe_id ?? 0},`;
@@ -53,47 +45,36 @@
 +    return hash;
 +}
 +
-+/**
-+ * Checks if old messages have been modified since last save.
-+ * @param {object[]} chatArray Current chat array
-+ * @param {number} savedLength Number of messages at last save
-+ * @returns {boolean} True if old messages changed
-+ */
 +function hasOldMessagesChanged(chatArray, savedLength) {
 +    return computeChatHash(chatArray, savedLength) !== lastSavedChatHash;
 +}
 +
-+/**
-+ * Resets incremental save tracking state.
-+ * Call this when switching chats, characters, or reloading.
-+ */
 +export function resetIncrementalSaveState() {
 +    lastSavedChatName = null;
 +    lastSavedChatLength = 0;
 +    lastSavedChatHash = null;
 +}
++
  export let isChatSaving = false;
  let firstRun = false;
  export let settingsReady = false;
-@@ -1553,7 +1614,12 @@
+@@ -1597,7 +1639,11 @@ export async function clearChat({ clearData = false } = {}) {
      await saveItemizedPrompts(getCurrentChatId());
      itemizedPrompts.length = 0;
  
 -    if (clearData) chat.length = 0;
 +    if (clearData) {
 +        chat.length = 0;
-+        // Reset incremental save tracking when chat data is cleared
 +        resetIncrementalSaveState();
 +        resetGroupIncrementalSaveState();
 +    }
  }
  
  export async function deleteLastMessage() {
-@@ -7207,6 +7273,50 @@
+@@ -7333,6 +7379,46 @@ export async function saveChat({ chatName, withMetadata, mesId, force = false, c
      };
  
      try {
-+        // ===== Incremental save check =====
 +        const isSameChat = (
 +            !force &&
 +            mesId === undefined &&
@@ -105,8 +86,6 @@
 +        const isSameLength = isSameChat && trimmedChat.length === lastSavedChatLength;
 +        const oldMessagesUnchanged = isSameChat && !hasOldMessagesChanged(trimmedChat, lastSavedChatLength);
 +
-+        // Case 1: New messages appended + old messages unchanged → incremental append
-+        // Case 2: Same length + old messages unchanged → header-only update (metadata save)
 +        const canAppend = hasNewMessages && oldMessagesUnchanged;
 +        const canHeaderOnly = isSameLength && oldMessagesUnchanged;
 +
@@ -123,7 +102,7 @@
 +                    avatar_url: characters[this_chid].avatar,
 +                    header: chatHeader,
 +                    newMessages: newMessages,
-+                    expectedLines: lastSavedChatLength + 1, // +1 for header line
++                    expectedLines: lastSavedChatLength + 1,
 +                }),
 +            });
 +
@@ -136,15 +115,13 @@
 +            console.warn('Incremental save failed, falling back to full save');
 +        }
 +
-+        // ===== Full save (original logic) =====
-         const result = await fetch('/api/chats/save', {
+         const saveChatRequest = await compressRequest({
              method: 'POST',
              cache: 'no-cache',
-@@ -7221,6 +7331,10 @@
-         });
+@@ -7348,6 +7434,9 @@ export async function saveChat({ chatName, withMetadata, mesId, force = false, c
+         const result = await fetch('/api/chats/save', saveChatRequest);
  
          if (result.ok) {
-+            // Update incremental save tracking after successful full save
 +            lastSavedChatName = fileName;
 +            lastSavedChatLength = trimmedChat.length;
 +            lastSavedChatHash = computeChatHash(trimmedChat, trimmedChat.length);
